@@ -19,6 +19,9 @@ README.md
 .idea
 venv/
 env/
-models/
 *.log
+
+# Exclude downloaded ML model cache, but NOT app/models/ source code
+/models/
+!app/models/
 
