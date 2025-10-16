@@ -51,7 +51,7 @@ steps:
       - '--no-cpu-throttling'
 
 substitutions:
-  _IMAGE_TAG: '${SHORT_SHA}'
+  _IMAGE_TAG: 'latest'
   _API_KEY: 'Chy7k2_OTciwvcGY17aGxInOT6xedWAv3ywpBdRuuBg'
   _SERVICE_ACCOUNT: 'gh-actions-deployer@charged-sum-438023-h2.iam.gserviceaccount.com'
   _REDIS_HOST: '10.52.158.91'
