@@ -42,6 +42,7 @@ steps:
       - '--timeout=300'
       - '--concurrency=10'
       - '--cpu-boost'
+      - '--port=8080'
       - '--set-env-vars=LOG_LEVEL=INFO,BATCH_SIZE=16,API_KEY=${_API_KEY},REDIS_HOST=${_REDIS_HOST},REDIS_PORT=${_REDIS_PORT},REDIS_AUTH=${_REDIS_AUTH},REDIS_DB=${_REDIS_DB},REDIS_ENABLED=${_REDIS_ENABLED}'
       - '--vpc-connector=semantic-vpc-us-c1'
       - '--vpc-egress=private-ranges-only'
