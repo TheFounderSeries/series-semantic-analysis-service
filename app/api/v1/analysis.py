@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from app.services.emotion_analyzer import EmotionAnalyzer
 from app.core.config import get_settings
-import torch
 import logging
 
 logger = logging.getLogger(__name__)
@@ -73,6 +72,13 @@ async def analyze_conversation(
         if "error" in analysis:
             raise HTTPException(status_code=500, detail=f"Analysis error: {analysis['error']}")
         
+        # Import torch only when needed
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "unknown"
+        
         return {
             "conversation_id": request.conversation_id,
             "analysis": analysis,
@@ -80,7 +86,7 @@ async def analyze_conversation(
             "model_info": {
                 "emotion_model": "j-hartmann/emotion-english-distilroberta-base",
                 "sentiment_model": "cardiffnlp/twitter-roberta-base-sentiment-latest",
-                "device": "cuda" if torch.cuda.is_available() else "cpu"
+                "device": device
             }
         }
     except HTTPException:
@@ -97,15 +103,21 @@ async def health_check():
     
     Returns system status including GPU availability.
     """
-    gpu_available = torch.cuda.is_available()
-    gpu_info = {}
-    
-    if gpu_available:
-        gpu_info = {
-            "gpu_name": torch.cuda.get_device_name(0),
-            "gpu_memory_total": f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB",
-            "gpu_memory_allocated": f"{torch.cuda.memory_allocated(0) / 1e9:.2f} GB"
-        }
+    # Import torch only when checking health (lazy)
+    try:
+        import torch
+        gpu_available = torch.cuda.is_available()
+        gpu_info = {}
+        
+        if gpu_available:
+            gpu_info = {
+                "gpu_name": torch.cuda.get_device_name(0),
+                "gpu_memory_total": f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB",
+                "gpu_memory_allocated": f"{torch.cuda.memory_allocated(0) / 1e9:.2f} GB"
+            }
+    except ImportError:
+        gpu_available = False
+        gpu_info = None
     
     return {
         "status": "healthy",

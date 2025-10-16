@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,25 +20,59 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Log startup environment
+logger.info("=" * 80)
+logger.info("SEMANTIC ANALYSIS SERVICE STARTING")
+logger.info("=" * 80)
+logger.info(f"Python version: {sys.version}")
+logger.info(f"PORT environment variable: {os.environ.get('PORT', 'NOT SET')}")
+logger.info(f"Working directory: {os.getcwd()}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
-    logger.info("Starting Semantic Analysis Service...")
-    settings = get_settings()
-    logger.info(f"Log level: {settings.log_level}")
-    logger.info(f"Debug mode: {settings.debug}")
+    logger.info("=" * 80)
+    logger.info("LIFESPAN STARTUP BEGIN")
+    logger.info("=" * 80)
     
-    # Skip model preloading to ensure fast startup
-    # Models will be loaded lazily on first request
-    logger.info("Models will be loaded on first request (lazy loading)")
-    logger.info("Service ready to accept requests")
+    try:
+        settings = get_settings()
+        logger.info(f"✓ Settings loaded successfully")
+        logger.info(f"  - Log level: {settings.log_level}")
+        logger.info(f"  - Debug mode: {settings.debug}")
+        logger.info(f"  - Port: {settings.port}")
+        logger.info(f"  - Batch size: {settings.batch_size}")
+        logger.info(f"  - Redis enabled: {settings.redis_enabled}")
+        
+        # Check for CUDA availability
+        try:
+            import torch
+            cuda_available = torch.cuda.is_available()
+            logger.info(f"  - CUDA available: {cuda_available}")
+            if cuda_available:
+                logger.info(f"  - GPU: {torch.cuda.get_device_name(0)}")
+        except Exception as e:
+            logger.warning(f"  - Could not check CUDA: {e}")
+        
+        # Skip model preloading to ensure fast startup
+        # Models will be loaded lazily on first request
+        logger.info("✓ Models will be loaded on first request (lazy loading)")
+        logger.info("=" * 80)
+        logger.info("SERVICE READY TO ACCEPT REQUESTS")
+        logger.info("=" * 80)
+        
+    except Exception as e:
+        logger.error(f"✗ STARTUP FAILED: {e}", exc_info=True)
+        raise
     
     yield
     
     # Shutdown
-    logger.info("Shutting down Semantic Analysis Service...")
+    logger.info("=" * 80)
+    logger.info("SHUTTING DOWN SEMANTIC ANALYSIS SERVICE")
+    logger.info("=" * 80)
 
 
 # Create FastAPI application
