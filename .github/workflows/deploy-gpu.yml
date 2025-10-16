@@ -1,0 +1,117 @@
+name: Deploy Semantic Analysis Service (GPU)
+
+on:
+  push:
+    branches: ["main", "develop", "staging"]
+    paths:
+      - 'semantic-analysis-service/**'
+      - '.github/workflows/deploy-gpu.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: charged-sum-438023-h2
+  REGION: us-central1
+  SERVICE_NAME: semantic-analysis-service
+  REPOSITORY: semantic-analysis
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/202642739529/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: gh-actions-deployer@charged-sum-438023-h2.iam.gserviceaccount.com
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+      
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      
+      - name: Ensure Artifact Registry repository exists
+        run: |
+          gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
+            --location=${{ env.REGION }} 2>/dev/null || \
+          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --description="Semantic Analysis Service GPU images"
+      
+      - name: Create VPC Connector (if not exists)
+        run: |
+          # Using 10.8.2.0/28 to avoid conflict with stargate-redis-connector (10.8.0.0/28)
+          gcloud compute networks vpc-access connectors describe semantic-vpc-us-c1 \
+            --region=${{ env.REGION }} 2>/dev/null || \
+          gcloud compute networks vpc-access connectors create semantic-vpc-us-c1 \
+            --region=${{ env.REGION }} \
+            --network=default \
+            --range=10.8.2.0/28 \
+            --min-instances=2 \
+            --max-instances=3 \
+            --machine-type=e2-micro
+      
+      - name: Build and push Docker image
+        working-directory: ./semantic-analysis-service
+        run: |
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest"
+          
+          docker build -f Dockerfile.gpu -t $IMAGE_TAG -t $IMAGE_LATEST .
+          docker push $IMAGE_TAG
+          docker push $IMAGE_LATEST
+          
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+      
+      - name: Deploy to Cloud Run with GPU and VPC
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.IMAGE_TAG }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --gpu 1 \
+            --gpu-type nvidia-l4 \
+            --memory 32Gi \
+            --cpu 8 \
+            --max-instances 3 \
+            --min-instances 1 \
+            --timeout 60 \
+            --concurrency 10 \
+            --set-env-vars API_KEY=${{ secrets.SEMANTIC_API_KEY }},LOG_LEVEL=INFO,BATCH_SIZE=16,REDIS_HOST=10.52.158.91,REDIS_PORT=6379,REDIS_AUTH=${{ secrets.REDIS_AUTH }},REDIS_DB=0,REDIS_ENABLED=true \
+            --vpc-connector semantic-vpc-us-c1 \
+            --vpc-egress private-ranges-only \
+            --allow-unauthenticated \
+            --service-account gh-actions-deployer@charged-sum-438023-h2.iam.gserviceaccount.com \
+            --no-cpu-throttling
+      
+      - name: Get service URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format 'value(status.url)')
+          echo "Service deployed to: $SERVICE_URL"
+          echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_ENV
+      
+      - name: Test deployment
+        run: |
+          sleep 15  # Wait for service to be ready
+          curl -f ${{ env.SERVICE_URL }}/health || exit 1
+          echo "✅ Health check passed!"
+      
+      - name: Test GPU availability
+        run: |
+          echo "Testing GPU availability..."
+          curl -s ${{ env.SERVICE_URL }}/api/v1/analysis/health | jq '.'
+
