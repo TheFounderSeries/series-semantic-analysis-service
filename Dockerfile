@@ -22,6 +22,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+# Pre-download ML models to avoid rate limiting and startup delays
+# This adds ~2GB to image size but ensures instant model availability
+RUN python3 -c "\
+from transformers import pipeline; \
+print('Downloading emotion model...'); \
+pipeline('text-classification', model='j-hartmann/emotion-english-distilroberta-base'); \
+print('Downloading sentiment model...'); \
+pipeline('sentiment-analysis', model='cardiffnlp/twitter-roberta-base-sentiment-latest'); \
+print('Models downloaded successfully!')"
+
 # Copy application code
 COPY app/ ./app/
 
